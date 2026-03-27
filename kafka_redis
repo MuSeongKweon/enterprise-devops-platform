@@ -1,0 +1,4 @@
+# Install Redis with light + Stateless Version
+
+# Install Kafka on Local, not on EKS, because of the spec of node so small for kafka enough to be installed
+

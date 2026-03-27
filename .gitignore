@@ -1,0 +1,15 @@
+# Terr./aform
+.terraform/
+tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+
+# Kafka
+kafka_2.13-*/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
