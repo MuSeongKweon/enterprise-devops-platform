@@ -1,0 +1,33 @@
+server:
+  global:
+    scrape_interval: 60s
+
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 20m
+    limits:
+      memory: 128Mi
+
+  retention: 2h
+
+  extraScrapeConfigs: |
+    - job_name: 'payment-service'
+      static_configs:
+        - targets: ['payment-service:80']
+
+    - job_name: 'notification-service'
+      static_configs:
+        - targets: ['notification-service:80']
+
+alertmanager:
+  enabled: false
+
+pushgateway:
+  enabled: false
+
+kubeStateMetrics:
+  enabled: false
+
+nodeExporter:
+  enabled: false
