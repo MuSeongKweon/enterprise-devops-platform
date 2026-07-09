@@ -1,163 +1,160 @@
-# 🚀 Enterprise DevOps Platform (Lightweight MSA + GitOps)
+# 🚀 Enterprise DevOps Platform
 
-## 📌 Overview
+> **Production-oriented cloud-native platform built under real-world resource constraints**  
+> AWS EKS · Terraform · ArgoCD · Kubernetes · Python Flask · Redis
 
-This project demonstrates a lightweight, production-oriented DevOps platform built on AWS EKS, implementing:
-
-- Microservices Architecture (MSA)
-- Event-driven communication (Redis Pub/Sub)
-- GitOps-based continuous deployment (ArgoCD)
-- Infrastructure as Code (Terraform)
-
-The goal is to design and operate a real-world cloud-native system under constrained resources (t3.micro), focusing on architectural decisions and trade-offs.
+![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=flat&logo=kubernetes&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-7B42BC?style=flat&logo=terraform&logoColor=white)
+![ArgoCD](https://img.shields.io/badge/ArgoCD-EF7B4D?style=flat&logo=argo&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-232F3E?style=flat&logo=amazon-aws&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat&logo=redis&logoColor=white)
 
 ---
 
-## 🧱 Architecture
+## 📌 Problem Statement
 
-GitHub (main)
-↓
-ArgoCD (GitOps CD)
-↓
-Kubernetes (EKS)
-├ Payment Service (Publisher)
-├ Notification Service (Subscriber)
-└ Redis (Message Broker)
+Most DevOps tutorials assume unlimited resources. This project asks a harder question:
+
+> **Can a production-grade GitOps pipeline — MSA, event-driven communication, IaC — run reliably on t3.micro ($0.0104/hr)?**
+
+The answer required deliberate trade-offs in architecture, observability, and tooling selection.
+
+---
+
+## 🏗️ Architecture
+
+```
+Developer (local)
+      │
+      │  git push
+      ▼
+  GitHub (main branch)         ← Single Source of Truth
+      │
+      │  webhook / polling
+      ▼
+  ArgoCD (GitOps CD)           ← Drift detection + self-healing
+      │
+      │  kubectl apply
+      ▼
+  AWS EKS (Kubernetes Cluster)
+  ├── Payment Service (Flask)  ── publishes event ──▶ Redis Pub/Sub
+  └── Notification Service (Flask) ◀── subscribes ──── Redis Pub/Sub
+```
+
+**Infrastructure Layer (Terraform-managed):**
+- VPC + Subnet (public/private isolation)
+- EKS Cluster + NodeGroup (t3.micro)
+- IAM Roles + Security Groups
 
 ---
 
 ## ⚙️ Tech Stack
 
-### Infrastructure
-- AWS EKS
-- Terraform (VPC, Subnet, EKS, NodeGroup)
-
-### Container & Orchestration
-- Docker
-- Kubernetes
-
-### DevOps / CD
-- ArgoCD (GitOps-based deployment)
-
-### Application
-- Python (Flask-based microservices)
-- Redis (Pub/Sub messaging)
+| Layer | Technology | Rationale |
+|---|---|---|
+| Infra provisioning | Terraform | Reproducible, version-controlled infra |
+| Container orchestration | Kubernetes (EKS) | Industry standard for MSA |
+| Continuous deployment | ArgoCD | Git as the only deployment trigger |
+| Messaging | Redis Pub/Sub | Lightweight; fits memory constraints |
+| Application | Python Flask | Minimal footprint on constrained nodes |
 
 ---
 
-## 🧠 Key Concepts
+## 🧠 Key Engineering Decisions
 
-### 1. Microservices Architecture (MSA)
+### 1. GitOps over CI/CD push model
+Chose ArgoCD pull-based deployment so Kubernetes state is always reconciled with Git. Any manual `kubectl apply` will be detected and reverted — enforcing config consistency without human discipline.
 
-- Services are independently deployed
-- Loose coupling via event-driven communication
-- Scalable and extensible system design
+### 2. Redis Pub/Sub over Kafka
+On t3.micro (1 vCPU, 1GB RAM), Kafka's JVM overhead (~512MB baseline) is prohibitive.  
+Redis Pub/Sub delivers sub-millisecond latency with ~10MB footprint — the right tool for the constraint.
 
----
+**Known limitation:** No message persistence. If the notification subscriber is down, events are lost. Documented as a future migration target (→ Kafka).
 
-### 2. Event-Driven Architecture
+### 3. Removed Prometheus + Grafana
+Monitoring stack consumed more RAM than the application itself, causing OOMKill events on the node.  
+Decision: prioritize core service stability. Added structured logging as a lightweight alternative.
 
-Payment Service → Redis → Notification Service
-- Payment service publishes events
-- Notification service subscribes and reacts
-- Asynchronous, decoupled communication
-
----
-
-### 3. GitOps Deployment
-
-- GitHub = Single Source of Truth
-- ArgoCD continuously syncs Git → Kubernetes
-git push → ArgoCD → automatic deployment
-- No manual `kubectl apply`
-- Drift detection & self-healing
+> **Takeaway:** Architectural decisions are never tool-agnostic. Resource budget is a first-class constraint.
 
 ---
 
-## 🔄 System Workflow
+## 🔄 Runtime Flow
 
-1. Developer updates code locally
-2. Push to GitHub (main branch)
-3. ArgoCD detects changes
-4. Kubernetes resources automatically updated
-5. Services deployed
-
-Runtime flow:
-User action → Payment Service → Redis → Notification Service
-
----
-
-## 🧪 Test Scenario (Realistic)
-
-### ✅ Scenario: Payment Event
-
-1. User triggers payment
-2. Payment service publishes event: “payment completed”
-3. Redis delivers event
-4. Notification service receives event
-5. Notification is generated
+```
+User action
+    │
+    ▼
+Payment Service  ──[publish: "payment.completed"]──▶  Redis
+                                                          │
+                                                          ▼
+                                              Notification Service
+                                              (logs / triggers alert)
+```
 
 ---
 
-## ⚠️ Design Trade-offs
+## 🧪 Test Scenario
 
-### Redis Pub/Sub
+| Step | Action | Expected Result |
+|---|---|---|
+| 1 | `POST /pay` to Payment Service | Event published to Redis channel |
+| 2 | Redis delivers to Notification subscriber | Notification log appears |
+| 3 | `git push` new K8s manifest | ArgoCD detects diff, auto-deploys within ~30s |
+| 4 | Manual `kubectl` change to cluster | ArgoCD detects drift, reverts to Git state |
 
-Pros
-- Lightweight
-- Fast (in-memory)
-- Simple to implement
+---
 
-Cons
-- No message persistence
-- No replay capability
-- Message loss if subscriber is down
+## 🚀 Getting Started
 
-⸻
+### Prerequisites
+- AWS CLI configured
+- Terraform >= 1.3
+- kubectl
+- ArgoCD CLI
 
-### Monitoring Decision
+### 1. Provision Infrastructure
+```bash
+cd terraform/
+terraform init
+terraform plan
+terraform apply
+```
 
-Initially, Prometheus + Grafana was deployed.
+### 2. Connect to EKS
+```bash
+aws eks update-kubeconfig --region ap-northeast-2 --name <cluster-name>
+```
 
-However:
-- t3.micro (1GB RAM) environment caused resource exhaustion
-- Monitoring stack consumed more resources than application
+### 3. Install ArgoCD
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+```
 
-👉 Decision:
-- Removed monitoring stack
-- Focused on core service stability and GitOps pipeline
+### 4. Apply Application Manifests
+```bash
+kubectl apply -f k8s/
+```
 
-⸻
+---
 
-## 💡 Key Learnings
-- GitOps enables fully automated deployment without manual intervention
-- Infrastructure scaling is critical when adding observability components
-- Redis Pub/Sub is effective for lightweight event-driven systems
-- Resource constraints directly impact architectural decisions
+## 📌 Roadmap
 
-⸻
+| Priority | Item |
+|---|---|
+| High | CI pipeline (GitHub Actions) — lint, test, image build |
+| High | Replace Redis Pub/Sub with Kafka (message durability) |
+| Medium | API Gateway / Ingress controller |
+| Medium | Prometheus + Grafana (on higher-resource node) |
+| Low | Service Mesh (Istio/Linkerd) for mTLS |
 
-## 📌 Future Improvements
-- Replace Redis Pub/Sub with Kafka (durable messaging)
-- Add Prometheus in higher-resource environment
-- Implement API Gateway / Service Mesh
-- Introduce CI pipeline (GitHub Actions)
+---
 
-⸻
+## 💡 What This Project Demonstrates
 
-## 🧠 What This Project Demonstrates
-- End-to-end DevOps pipeline design
-- Kubernetes-based MSA deployment
-- GitOps workflow using ArgoCD
-- Real-world trade-off decision making under constraints
-
-⸻
-
-## 🔥 Summary
-
-This project implements a cloud-native DevOps platform combining:
-- MSA + Event-driven architecture
-- GitOps-based continuous delivery
-- Infrastructure automation
-
-→ Designed and operated with real-world constraints in mind.
+- End-to-end GitOps pipeline design and operation
+- MSA deployment on Kubernetes with IaC-managed infrastructure
+- Real-world architectural trade-off analysis under hard constraints
+- Async event-driven communication pattern (Pub/Sub)
